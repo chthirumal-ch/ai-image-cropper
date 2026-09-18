@@ -4,7 +4,6 @@ import numpy as np
 import fitz  # PyMuPDF
 import io
 import os
-import base64
 from PIL import Image
 from ultralytics import YOLO
 
@@ -118,20 +117,6 @@ def crop_document_with_v4_ai_hd(cv_image_input):
 
     return Image.fromarray(cv2.cvtColor(warped_result, cv2.COLOR_BGR2RGB))
 
-def trigger_auto_download(data_bytes, filename, mime_type):
-    """Uses a lightweight frontend injection script to pop open the download prompt instantly."""
-    b64_data = base64.b64encode(data_bytes).decode()
-    js_script = f"""
-        <script>
-            var link = document.createElement('a');
-            link.href = 'data:{mime_type};base64,{b64_data}';
-            link.download = '{filename}';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        </script>
-    """
-    st.components.v1.html(js_script, height=0, width=0)
 
 # 📤 File Upload Tray Manager Panel
 uploaded_files = st.file_uploader(
@@ -141,65 +126,85 @@ uploaded_files = st.file_uploader(
 )
 
 if uploaded_files:
-    # Action Trigger Button explicitly handles workflow start
-    if st.button("✂️ Clip Crop", type="primary", use_container_width=True):
-        with st.spinner("Processing files... Please wait..."):
-            processed_images_cache = []
-            input_is_pdf = False
-            base_document_name = "scanned_output"
+    # We use Streamlit session state to manage variables across button triggers cleanly
+    if 'processed_data' not in st.session_state:
+        st.session_state.processed_data = None
+        st.session_state.output_name = ""
+        st.session_state.mime_type = ""
 
-            for file in uploaded_files:
-                base_document_name = os.path.splitext(file.name)[0]
-                
-                # Parse PDF Document page streams
-                if file.name.lower().endswith(".pdf"):
-                    input_is_pdf = True
-                    pdf_bytes = file.read()
-                    pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+    # Phase A: User clicks "Clip Crop" to process the files quietly in the background
+    if st.session_state.processed_data is None:
+        if st.button("✂️ Clip Crop", type="primary", use_container_width=True):
+            with st.spinner("AI Processing files... Please wait..."):
+                processed_images_cache = []
+                input_is_pdf = False
+                base_name = "scanned_output"
+
+                for file in uploaded_files:
+                    base_name = os.path.splitext(file.name)[0]
                     
-                    for page_idx in range(len(pdf_document)):
-                        page = pdf_document[page_idx]
-                        pixmap = page.get_pixmap(dpi=150)
-                        image_data = Image.frombytes("RGB", [pixmap.width, pixmap.height], pixmap.samples)
-                        cv_img = cv2.cvtColor(np.array(image_data), cv2.COLOR_RGB2BGR)
+                    if file.name.lower().endswith(".pdf"):
+                        input_is_pdf = True
+                        pdf_bytes = file.read()
+                        pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
                         
+                        for page_idx in range(len(pdf_document)):
+                            page = pdf_document[page_idx]
+                            pixmap = page.get_pixmap(dpi=150)
+                            image_data = Image.frombytes("RGB", [pixmap.width, pixmap.height], pixmap.samples)
+                            cv_img = cv2.cvtColor(np.array(image_data), cv2.COLOR_RGB2BGR)
+                            
+                            cropped_pil = crop_document_with_v4_ai_hd(cv_img)
+                            processed_images_cache.append(cropped_pil)
+                        pdf_document.close()
+                    else:
+                        file_bytes = np.asarray(bytearray(file.read()), dtype=np.uint8)
+                        cv_img = cv2.imdecode(file_bytes, 1)
                         cropped_pil = crop_document_with_v4_ai_hd(cv_img)
                         processed_images_cache.append(cropped_pil)
-                    pdf_document.close()
 
-                # Parse standard incoming images
-                else:
-                    file_bytes = np.asarray(bytearray(file.read()), dtype=np.uint8)
-                    cv_img = cv2.imdecode(file_bytes, 1)
-                    cropped_pil = crop_document_with_v4_ai_hd(cv_img)
-                    processed_images_cache.append(cropped_pil)
-
-            # Execution logic routes files directly without displaying previews
-            if len(processed_images_cache) > 0:
-                # ROUTE 1: Single image source inputs download instantly as a high-fidelity JPG image
-                if len(processed_images_cache) == 1 and not input_is_pdf:
-                    img_buffer = io.BytesIO()
-                    processed_images_cache[0].save(img_buffer, format="JPEG", quality=100, subsampling=0)
-                    
-                    final_filename = f"perfect_crop_{base_document_name}.jpg"
-                    trigger_auto_download(img_buffer.getvalue(), final_filename, "image/jpeg")
-                    st.success(f"📥 Done! '{final_filename}' downloaded automatically.")
-
-                # ROUTE 2 & 3: Bulk photos or multi-page documents get compiled into a single unified print PDF
-                else:
-                    pdf_compiler = fitz.open()
-                    for pil_page in processed_images_cache:
+                if len(processed_images_cache) > 0:
+                    # ROUTE 1: Single image gets packaged back as an ultra-sharp JPG
+                    if len(processed_images_cache) == 1 and not input_is_pdf:
                         img_buffer = io.BytesIO()
-                        pil_page.save(img_buffer, format="JPEG", quality=98)
-                        img_buffer.seek(0)
-                        
-                        page_pdf_bytes = fitz.open("pdf", fitz.open(stream=img_buffer.getvalue(), filetype="jpeg").convert_to_pdf())
-                        pdf_compiler.insert_pdf(page_pdf_bytes)
-                        
-                    pdf_output_buffer = io.BytesIO()
-                    pdf_compiler.save(pdf_output_buffer)
-                    pdf_compiler.close()
+                        processed_images_cache[0].save(img_buffer, format="JPEG", quality=100, subsampling=0)
+                        st.session_state.processed_data = img_buffer.getvalue()
+                        st.session_state.output_name = f"perfect_crop_{base_name}.jpg"
+                        st.session_state.mime_type = "image/jpeg"
                     
-                    final_pdf_name = f"cropped_bundle_{base_document_name}.pdf"
-                    trigger_auto_download(pdf_output_buffer.getvalue(), final_pdf_name, "application/pdf")
-                    st.success(f"📥 Done! '{final_pdf_name}' downloaded automatically.")
+                    # ROUTE 2 & 3: Bulk photos or PDFs compile into a unified print PDF
+                    else:
+                        pdf_compiler = fitz.open()
+                        for pil_page in processed_images_cache:
+                            img_buffer = io.BytesIO()
+                            pil_page.save(img_buffer, format="JPEG", quality=98)
+                            img_buffer.seek(0)
+                            
+                            page_pdf_bytes = fitz.open("pdf", fitz.open(stream=img_buffer.getvalue(), filetype="jpeg").convert_to_pdf())
+                            pdf_compiler.insert_pdf(page_pdf_bytes)
+                            
+                        pdf_output_buffer = io.BytesIO()
+                        pdf_compiler.save(pdf_output_buffer)
+                        pdf_compiler.close()
+                        
+                        st.session_state.processed_data = pdf_output_buffer.getvalue()
+                        st.session_state.output_name = f"cropped_bundle_{base_name}.pdf"
+                        st.session_state.mime_type = "application/pdf"
+            st.rerun()
+
+    # Phase B: Once processing completes, show the native download button instantly
+    else:
+        st.success(f"🎉 Custom AI crop optimization complete!")
+        st.download_button(
+            label=f"📥 Download Your Cropped Document ({st.session_state.output_name})",
+            data=st.session_state.processed_data,
+            file_name=st.session_state.output_name,
+            mime=st.session_state.mime_type,
+            type="primary",
+            use_container_width=True
+        )
+        
+        # Simple reset button to allow scanning a new document batch
+        if st.button("🔄 Scan Another Document", use_container_width=True):
+            st.session_state.processed_data = None
+            st.rerun()
