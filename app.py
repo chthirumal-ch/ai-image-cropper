@@ -104,9 +104,7 @@ def crop_document_with_v4_ai_hd(cv_image_input):
     height_b = np.linalg.norm(tl - bl)
     max_height = int(max(height_a, height_b))
 
-    x_zero, y_zero = 0, 0
-    dst = np.array([
-        [x_zero, y_zero],
+    dst = np.array([,
         [max_width - 1, 0],
         [max_width - 1, max_height - 1],
         [0, max_height - 1]
@@ -119,20 +117,19 @@ def crop_document_with_v4_ai_hd(cv_image_input):
 
 
 # 📤 File Upload Tray Manager Panel
+# FIX: Added "jfif" directly to the allowed formats list
 uploaded_files = st.file_uploader(
     "Upload your customer image files or PDF documents here:", 
-    type=["png", "jpg", "jpeg", "pdf"], 
+    type=["png", "jpg", "jpeg", "jfif", "pdf"], 
     accept_multiple_files=True
 )
 
 if uploaded_files:
-    # We use Streamlit session state to manage variables across button triggers cleanly
     if 'processed_data' not in st.session_state:
         st.session_state.processed_data = None
         st.session_state.output_name = ""
         st.session_state.mime_type = ""
 
-    # Phase A: User clicks "Clip Crop" to process the files quietly in the background
     if st.session_state.processed_data is None:
         if st.button("✂️ Clip Crop", type="primary", use_container_width=True):
             with st.spinner("AI Processing files... Please wait..."):
@@ -158,21 +155,21 @@ if uploaded_files:
                             processed_images_cache.append(cropped_pil)
                         pdf_document.close()
                     else:
-                        file_bytes = np.asarray(bytearray(file.read()), dtype=np.uint8)
-                        cv_img = cv2.imdecode(file_bytes, 1)
+                        # FIX: Use PIL to safely open image streams (handles complex JFIF profiles cleanly)
+                        pil_raw = Image.open(file).convert("RGB")
+                        # Transform safely into standard BGR format for OpenCV
+                        cv_img = cv2.cvtColor(np.array(pil_raw), cv2.COLOR_RGB2BGR)
+                        
                         cropped_pil = crop_document_with_v4_ai_hd(cv_img)
                         processed_images_cache.append(cropped_pil)
 
                 if len(processed_images_cache) > 0:
-                    # ROUTE 1: Single image gets packaged back as an ultra-sharp JPG
                     if len(processed_images_cache) == 1 and not input_is_pdf:
                         img_buffer = io.BytesIO()
                         processed_images_cache[0].save(img_buffer, format="JPEG", quality=100, subsampling=0)
                         st.session_state.processed_data = img_buffer.getvalue()
                         st.session_state.output_name = f"perfect_crop_{base_name}.jpg"
                         st.session_state.mime_type = "image/jpeg"
-                    
-                    # ROUTE 2 & 3: Bulk photos or PDFs compile into a unified print PDF
                     else:
                         pdf_compiler = fitz.open()
                         for pil_page in processed_images_cache:
@@ -192,7 +189,6 @@ if uploaded_files:
                         st.session_state.mime_type = "application/pdf"
             st.rerun()
 
-    # Phase B: Once processing completes, show the native download button instantly
     else:
         st.success(f"🎉 Custom AI crop optimization complete!")
         st.download_button(
@@ -204,7 +200,6 @@ if uploaded_files:
             use_container_width=True
         )
         
-        # Simple reset button to allow scanning a new document batch
         if st.button("🔄 Scan Another Document", use_container_width=True):
             st.session_state.processed_data = None
             st.rerun()
