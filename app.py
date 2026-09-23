@@ -120,7 +120,7 @@ def crop_document_with_v4_ai_hd(cv_image_input):
 
 # 📤 File Upload Tray Manager Panel
 uploaded_files = st.file_uploader(
-    "Upload your customer image files or PDF documents here:", 
+    "Upload image files or PDF documents here:", 
     type=["png", "jpg", "jpeg", "pdf","jfif"], 
     accept_multiple_files=True
 )
