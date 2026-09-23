@@ -10,7 +10,7 @@ from ultralytics import YOLO
 # ⚙️ Web Workspace Layout Initializer Configuration
 st.set_page_config(page_title="Document Scanner Pro", page_icon="✂️", layout="centered")
 
-st.title("✂️ Document Cropping ")
+st.title("✂️ DOCUMENT CROPPING")
 st.write("Bhavani Xerox")
 
 # 🧠 Check and load your private custom trained AI brain
