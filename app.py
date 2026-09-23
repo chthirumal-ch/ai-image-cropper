@@ -8,10 +8,10 @@ from PIL import Image
 from ultralytics import YOLO
 
 # ⚙️ Web Workspace Layout Initializer Configuration
-st.set_page_config(page_title="AI Document Scanner Pro", page_icon="📄", layout="centered")
+st.set_page_config(page_title="Document Scanner Pro", page_icon="✂️", layout="centered")
 
-st.title("📄 High-Fidelity Custom AI Document Scanner")
-st.write("Upload raw smartphone capture images or PDF packets to automatically isolate document pages and strip away background surfaces.")
+st.title("✂️ Document Cropping ")
+st.write("Bhavani Xerox")
 
 # 🧠 Check and load your private custom trained AI brain
 MODEL_PATH = "best.pt"
@@ -196,7 +196,7 @@ if uploaded_files:
     else:
         st.success(f"🎉 Custom AI crop optimization complete!")
         st.download_button(
-            label=f"📥 Download Your Cropped Document ({st.session_state.output_name})",
+            label=f"✂️⬇️ Download Document ",
             data=st.session_state.processed_data,
             file_name=st.session_state.output_name,
             mime=st.session_state.mime_type,
